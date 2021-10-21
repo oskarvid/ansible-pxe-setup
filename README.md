@@ -5,7 +5,7 @@ Keep in mind that if you don't intend to install an Ubuntu distribution you will
 ## Topology
 The test setup was very hacky, it worked but it wasn't possible to connect the computer-to-be-installed or the pxe server to the internet, hence I needed to use my internet connected laptop to serve the ubuntu iso to the pxe server. The setup looked like this:  
 ![setup-overview](.setup-overview.png)
-Because `dnsmasq` is normally used as DNS service and this setup required a router which ran a DNS service, there is a workaround for this in the playbook. I haven't tested it without this workaround but hopefully it's as simple as removing the workaround parts in the playbook to make it work on a setup that is not reliant on a router in the same way. 
+Because `dnsmasq` is normally used as DHCP service and this setup required a router which ran a DHCP service, there is a workaround for this in the playbook. I haven't tested it without this workaround but hopefully it's as simple as removing the workaround parts in the playbook to make it work on a setup that is not reliant on a router in the same way. 
 
 ## Hardcoded paths
 ### `configuration-files/default`
