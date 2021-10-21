@@ -1,0 +1,325 @@
+- name: Setup dnsmasq and tftp pxe boot server
+  hosts:
+    all
+  vars_files:
+    - vars/username.yml
+  user: '{{ username }}'
+  become: true
+  tasks:
+    - name: update apt
+      apt:
+        update_cache: yes
+    - name: install software
+      apt:
+        update_cache: yes
+        name: 
+          unzip,
+          dnsmasq, 
+          cd-boot-images-amd64,
+          syslinux-common,
+          p7zip-full
+
+    - name: create dnsmasq.conf.d dir
+      file:
+        path: /etc/dnsmasq.conf.d/
+        state: directory
+        recurse: yes
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+    - name: Create pxe.conf
+      copy:
+        src: configuration-files/pxe.conf
+        dest: /etc/dnsmasq.conf.d/pxe.conf
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+    - name: Copy dnsmasq.conf
+      copy:
+        src: configuration-files/dnsmasq.conf
+        dest: /etc/dnsmasq.conf
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+    - name: Fix resolved.conf
+      copy:
+        src: configuration-files/resolved.conf
+        dest: /etc/systemd/resolved.conf
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+    - name: Make symlink for resolv.conf
+      file:
+        src: /run/systemd/resolve/resolv.conf
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        state: link
+
+    - name: Stop systemd-resolved because it's using port 53
+      ansible.builtin.systemd:
+        state: stopped
+        name: systemd-resolved
+
+    - name: create dnsmasq.conf.d dir
+      file:
+        path: /srv/tftp/
+        state: directory
+        recurse: yes
+        mode: u=rw,g=xr,o=xr
+
+    - name: Restart dnsmasq
+      ansible.builtin.service:
+        name: dnsmasq
+        state: restarted
+
+    - name: Make symlink for boot loader
+      ansible.builtin.file:
+        src: /usr/share/cd-boot-images-amd64
+        dest: /srv/tftp/boot-amd64
+        owner: root
+        group: root
+        state: link
+
+    - name: Check if ISO has been downloaded
+      stat:
+        path: /ubuntu-21.04-live-server-amd64.iso
+      register: iso_present
+
+    - name: Download ubuntu ISO
+      get_url:
+        url: https://releases.ubuntu.com/21.04/ubuntu-21.04-live-server-amd64.iso
+        dest: /
+        mode: '0440'
+      when: not iso_present.stat.exists
+
+    - name: Copy vmlinuz and initrd from downloaded ubuntu iso
+      iso_extract:
+        src: /ubuntu-21.04-live-server-amd64.iso
+        dest: /srv/tftp
+        files:
+          - casper/vmlinuz 
+          - casper/initrd
+
+#### Shim-signed.deb dl, extract and setup of shimx64
+
+    - name: Check if shim.deb has been downloaded
+      stat:
+        path: /home/{{ username }}/shim-signed_1.40.3+15+1533136590.3beb971-0ubuntu1_amd64.deb
+      register: shim_present
+
+    - name: Download shim-signed.deb
+      get_url:
+        url: http://no.archive.ubuntu.com/ubuntu/pool/main/s/shim-signed/shim-signed_1.40.3+15+1533136590.3beb971-0ubuntu1_amd64.deb
+        dest: /home/{{ username }}/
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+      when: not shim_present.stat.exists
+
+    - name: create $HOME/shim dir
+      file:
+        path: /home/{{ username }}/shim/
+        state: directory
+        recurse: yes
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+    - name: extract deb contents
+      command: ar -xf /home/{{ username }}/shim-signed_1.40.3+15+1533136590.3beb971-0ubuntu1_amd64.deb --output=/home/{{ username }}/shim/
+
+    - name: extract data.tar.gz from the shim*.deb file
+      unarchive:
+        copy: no
+        src: /home/{{ username }}/shim/data.tar.xz
+        dest: /home/{{ username }}/shim/
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+
+    - name: Copy shimx64 signed file to tftp directory
+      copy:
+        remote_src: yes
+        src: /home/{{ username }}/shim/usr/lib/shim/shimx64.efi.signed
+        dest: /srv/tftp/bootx64.efi
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+#### grub-efi*.deb dl, extract and setup of shimx64
+
+    - name: Check if grub-efi.deb has been downloaded
+      stat:
+        path: /home/{{ username }}/grub-efi-amd64-signed_1.169+2.04-1ubuntu45_amd64.deb
+      register: grubefi_present
+
+    - name: Download grub-efi*.deb
+      get_url:
+        url: http://no.archive.ubuntu.com/ubuntu/pool/main/g/grub2-signed/grub-efi-amd64-signed_1.169+2.04-1ubuntu45_amd64.deb
+        dest: /home/{{ username }}/
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+      when: not grubefi_present.stat.exists
+
+    - name: create $HOME/grub-efi dir
+      file:
+        path: /home/{{ username }}/grub-efi/
+        state: directory
+        recurse: yes
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=rw,g=xr,o=xr
+
+    - name: extract deb contents
+      command: ar -xf /home/{{ username }}/grub-efi-amd64-signed_1.169+2.04-1ubuntu45_amd64.deb --output=/home/{{ username }}/grub-efi/
+
+    - name: extract data.tar.gz from the grub-efi*.deb file
+      unarchive:
+        copy: no
+        src: /home/{{ username }}/grub-efi/data.tar.xz
+        dest: /home/{{ username }}/grub-efi/
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+
+    - name: Copy grub-efi signed file to tftp directory
+      copy:
+        remote_src: yes
+        src: /home/{{ username }}/grub-efi/usr/lib/grub/x86_64-efi-signed/grubnetx64.efi.signed
+        dest: /srv/tftp/grubx64.efi
+        mode: u=rw,g=xr,o=xr
+
+#### grub-common.deb dl, extract and setup of grub fonts
+
+    - name: Check if grub-common.deb has been downloaded
+      stat:
+        path: /home/{{ username }}/grub-common_2.04-1ubuntu45_amd64.deb
+      register: grubcommon_present
+
+    - name: Download grub-common.deb
+      get_url:
+        url: http://no.archive.ubuntu.com/ubuntu/pool/main/g/grub2/grub-common_2.04-1ubuntu45_amd64.deb
+        dest: /home/{{ username }}/
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+      when: not grubcommon_present.stat.exists
+
+    - name: create $HOME/grub-common dir
+      file:
+        path: /home/{{ username }}/grub-common/
+        state: directory
+        recurse: yes
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=rw,g=xr,o=xr
+
+    - name: extract deb contents
+      command: ar -xf /home/{{ username }}/grub-common_2.04-1ubuntu45_amd64.deb --output=/home/{{ username }}/grub-common/
+
+    - name: extract data.tar.gz from the grub-common*.deb file
+      unarchive:
+        copy: no
+        src: /home/{{ username }}/grub-common/data.tar.xz
+        dest: /home/{{ username }}/grub-common/
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+
+    - name: Copy grub-common signed file to tftp directory
+      copy:
+        remote_src: yes
+        src: /home/{{ username }}/grub-common/usr/share/grub/unicode.pf2
+        dest: /srv/tftp/unicode.pf2
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+#### pxelinux.deb dl, extract and copy pxelinux.0 to /srv/tftp/
+
+    - name: Check if pxelinux.deb has been downloaded
+      stat:
+        path: /home/{{ username }}/pxelinux_6.04~git20190206.bf6db5b4+dfsg1-3_all.deb
+      register: pxelinux_present
+
+    - name: Download pxelinux.deb
+      get_url:
+        url: http://no.archive.ubuntu.com/ubuntu/pool/main/s/syslinux/pxelinux_6.04~git20190206.bf6db5b4+dfsg1-3_all.deb
+        dest: /home/{{ username }}/
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+      when: not pxelinux_present.stat.exists
+
+    - name: create $HOME/pxelinux dir
+      file:
+        path: /home/{{ username }}/pxelinux/
+        state: directory
+        recurse: yes
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+
+    - name: extract deb contents
+      command: ar -xf /home/{{ username }}/pxelinux_6.04~git20190206.bf6db5b4+dfsg1-3_all.deb --output=/home/{{ username }}/pxelinux
+
+    - name: extract data.tar.gz from the pxelinux*.deb file
+      unarchive:
+        copy: no
+        src: /home/{{ username }}/pxelinux/data.tar.xz
+        dest: /home/{{ username }}/pxelinux/
+        owner: '{{ username }}'
+        group: '{{ username }}'
+        mode: u=xrw,g=xrw,o=xr
+
+    - name: Copy pxelinux.0 to tftp directory
+      copy:
+        remote_src: yes
+        src: /home/{{ username }}/pxelinux/usr/lib/PXELINUX/pxelinux.0
+        dest: /srv/tftp/
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+#### End of .deb download and operations
+
+#### Copying ansible host configuration files to the PXE server
+    - name: Create /srv/tftp/grub/ dir
+      file:
+        path: /srv/tftp/grub/
+        state: directory
+        recurse: yes
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+    - name: Copy grub.cfg to remote server
+      copy:
+        src: configuration-files/grub.cfg
+        dest: /srv/tftp/grub/grub.cfg
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+    - name: Copy ldlinux.c32 to tftp directory
+      copy:
+        remote_src: yes
+        src: /usr/lib/syslinux/modules/bios/ldlinux.c32
+        dest: /srv/tftp/
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr
+
+    - name: Create /srv/tftp/pxelinux.cfg/default
+      copy:
+        src: configuration-files/default
+        dest: /srv/tftp/pxelinux.cfg/
+        owner: root
+        group: root
+        mode: u=rw,g=xr,o=xr

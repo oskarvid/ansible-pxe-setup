@@ -1,0 +1,5 @@
+DEFAULT install
+LABEL install
+  INITRD initrd
+  KERNEL vmlinuz
+  APPEND root=/dev/ram0 ramdisk_size=1500000 ip=dhcp url=192.168.10.100/ubuntu-21.04-live-server-amd64.iso

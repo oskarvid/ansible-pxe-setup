@@ -1,6 +1,0 @@
-auth_url: https://api.uh-iaas.no:5000/v3 #use this for uh-sky
-project_name: name-of-openstack-project
-username: name.namesson@domain.com
-password: xxxx
-user_domain_name: dataporten # this probably works for your uh-sky account too
-project_domain_name: dataporten # this probably works for your uh-sky account too

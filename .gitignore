@@ -1,4 +1,1 @@
-clouds.yml
-terraform.tfstate
-terraform.tfstate.backup
-terraform/.terraform
+cloud-init.yaml
